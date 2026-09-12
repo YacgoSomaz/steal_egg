@@ -1,0 +1,123 @@
+# English translation for Godot MCP Plugin.
+# Copyright (C) 2026 MCP4Godot
+# This file is distributed under the MIT license.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mcp4godot 1.0.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-23 00:00+0800\n"
+"PO-Revision-Date: 2026-06-23 00:00+0800\n"
+"Last-Translator: \n"
+"Language-Team: English\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# --- Status Messages ---
+msgid "START_FAILED_ERROR"
+msgstr "MCP4Godot: Failed to start HTTP server on port %d: %s"
+
+msgid "STATUS_START_FAILED"
+msgstr "Start failed (port %d)"
+
+msgid "STATUS_RUNNING"
+msgstr "Running (port %d, HTTP)"
+
+msgid "STATUS_STOPPED"
+msgstr "Stopped"
+
+msgid "STATUS_READY"
+msgstr "Status: Ready"
+
+# --- Error Messages ---
+msgid "ERR_MISSING_BODY"
+msgstr "Missing request body"
+
+msgid "ERR_HANDLER_NOT_SET"
+msgstr "MCP handler not configured"
+
+msgid "ERR_ACCEPT_HEADER"
+msgstr "Accept header must include text/event-stream"
+
+msgid "ERR_MISSING_SESSION"
+msgstr "Missing Mcp-Session-Id header"
+
+# --- Log Messages ---
+msgid "LOG_REQUEST"
+msgstr "%s %s (session: %s)"
+
+msgid "LOG_NEW_SESSION"
+msgstr "new session"
+
+msgid "LOG_CLIENT_SHUTDOWN"
+msgstr "Client %s requested shutdown"
+
+msgid "LOG_CLIENT_CONNECTED"
+msgstr "Client connected: %s"
+
+msgid "LOG_CLIENT_DISCONNECTED"
+msgstr "Client disconnected: %s"
+
+# --- Dock UI ---
+msgid "DOCK_TITLE"
+msgstr "Godot MCP Server"
+
+msgid "PORT_LABEL"
+msgstr "Port:"
+
+msgid "START"
+msgstr "Start"
+
+msgid "STOP"
+msgstr "Stop"
+
+msgid "TAB_LOG"
+msgstr "Log"
+
+msgid "TAB_ACTIVITY"
+msgstr "Activity"
+
+# --- Activity Cards ---
+msgid "CLIENT_CONNECTED"
+msgstr "Client Connected"
+
+msgid "CLIENT_DISCONNECTED"
+msgstr "Client Disconnected"
+
+msgid "CLIENT_INITIALIZING"
+msgstr "Client Initializing"
+
+msgid "CLIENT_READY"
+msgstr "Client Ready"
+
+msgid "LABEL_CLIENT"
+msgstr "Client:"
+
+msgid "LABEL_SESSION"
+msgstr "Session:"
+
+msgid "TOOL_CALL"
+msgstr "Tool Call:"
+
+msgid "TOOL_ERROR"
+msgstr "Tool Error:"
+
+msgid "LABEL_INPUT"
+msgstr "Input:"
+
+msgid "LABEL_RESULT"
+msgstr "Result:"
+
+msgid "LABEL_ERROR"
+msgstr "Error:"
+
+msgid "NEW_SESSION"
+msgstr "New Session"
+
+msgid "EXPAND"
+msgstr "Expand"
+
+msgid "COLLAPSE"
+msgstr "Collapse"

@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/partner/partner.gd" id="1_partner"]
+
+[node name="Partner" type="Node2D"]
+script = ExtResource("1_partner")
+
+[node name="Body" type="Polygon2D" parent="."]

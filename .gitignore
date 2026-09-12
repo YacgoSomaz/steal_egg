@@ -1,0 +1,36 @@
+# Godot 4
+.godot/
+*.tmp
+*.log
+
+# 导入缓存（Godot 会自动重建）
+*.import
+*.uid
+.import/
+
+# 导出产物
+export/
+export_presets.cfg
+*.exe
+*.pck
+*.zip
+
+# 运行时数据（存档在 user://，不入库）
+# 注意：不带前导斜杠的 **/ 语法，否则会被锚定到仓库根，漏掉 archive/ 里的
+**/app_userdata/
+**/Godot/
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python（调试脚本偶尔用）
+__pycache__/
+*.pyc

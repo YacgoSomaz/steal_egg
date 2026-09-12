@@ -1,0 +1,17 @@
+# 统一换行符：仓库里存 LF，检出时按系统转换
+* text=auto
+
+# 代码与文本
+*.gd      text eol=lf
+*.tscn    text eol=lf
+*.tres    text eol=lf
+*.cfg     text eol=lf
+*.md      text eol=lf
+*.json    text eol=lf
+*.gitignore text eol=lf
+*.gitattributes text eol=lf
+
+# 二进制
+*.png binary
+*.svg text eol=lf
+*.po text eol=lf

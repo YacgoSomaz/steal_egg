@@ -1,0 +1,85 @@
+[gd_scene format=3 uid="uid://bq3mcp6x8yk7n"]
+
+[ext_resource type="Script" path="res://addons/mcp4godot/ui/mcp_dock.gd" id="1_dock"]
+
+[node name="MCPDock" type="VBoxContainer" unique_id=647708588]
+offset_right = 390.0
+offset_bottom = 466.0
+script = ExtResource("1_dock")
+
+[node name="Header" type="Label" parent="." unique_id=126020873]
+layout_mode = 2
+text = "Godot MCP Server"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="." unique_id=1816133929]
+layout_mode = 2
+
+[node name="PortBox" type="HBoxContainer" parent="." unique_id=1608214852]
+layout_mode = 2
+
+[node name="PortLabel" type="Label" parent="PortBox" unique_id=1239283580]
+layout_mode = 2
+text = "Port:"
+
+[node name="PortSpin" type="SpinBox" parent="PortBox" unique_id=2125296119]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 1024.0
+max_value = 65535.0
+value = 9877.0
+
+[node name="ButtonBox" type="HBoxContainer" parent="." unique_id=1127658696]
+layout_mode = 2
+
+[node name="StartButton" type="Button" parent="ButtonBox" unique_id=1441860420]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Start"
+
+[node name="StopButton" type="Button" parent="ButtonBox" unique_id=1731507820]
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "Stop"
+
+[node name="StatusLabel" type="Label" parent="." unique_id=1481898261]
+layout_mode = 2
+text = "Stopped"
+horizontal_alignment = 1
+
+[node name="HSeparator2" type="HSeparator" parent="." unique_id=1638763138]
+layout_mode = 2
+
+[node name="TabContainer" type="TabContainer" parent="." unique_id=43274273]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 1
+tabs_position = 1
+
+[node name="LogTab" type="VBoxContainer" parent="TabContainer" unique_id=1628038260]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+metadata/_tab_index = 0
+
+[node name="LogOutput" type="RichTextLabel" parent="TabContainer/LogTab" unique_id=1156472792]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_following = true
+
+[node name="ActivityTab" type="VBoxContainer" parent="TabContainer" unique_id=630044266]
+layout_mode = 2
+size_flags_vertical = 3
+metadata/_tab_index = 1
+
+[node name="ActivityScroll" type="ScrollContainer" parent="TabContainer/ActivityTab" unique_id=530520766]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ActivityCards" type="VBoxContainer" parent="TabContainer/ActivityTab/ActivityScroll" unique_id=1803075538]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6

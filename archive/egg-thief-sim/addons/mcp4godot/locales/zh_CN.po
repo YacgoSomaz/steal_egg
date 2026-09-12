@@ -1,0 +1,123 @@
+# Simplified Chinese translation for Godot MCP Plugin.
+# Copyright (C) 2026 MCP4Godot
+# This file is distributed under the MIT license.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mcp4godot 1.0.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-23 00:00+0800\n"
+"PO-Revision-Date: 2026-06-23 00:00+0800\n"
+"Last-Translator: \n"
+"Language-Team: Chinese (Simplified)\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# --- 状态消息 ---
+msgid "START_FAILED_ERROR"
+msgstr "MCP4Godot: 无法在端口 %d 启动 HTTP 服务器: %s"
+
+msgid "STATUS_START_FAILED"
+msgstr "启动失败 (端口 %d)"
+
+msgid "STATUS_RUNNING"
+msgstr "运行中 (端口 %d, HTTP)"
+
+msgid "STATUS_STOPPED"
+msgstr "已停止"
+
+msgid "STATUS_READY"
+msgstr "状态: 就绪"
+
+# --- 错误消息 ---
+msgid "ERR_MISSING_BODY"
+msgstr "缺少请求体"
+
+msgid "ERR_HANDLER_NOT_SET"
+msgstr "MCP 处理器未配置"
+
+msgid "ERR_ACCEPT_HEADER"
+msgstr "Accept 请求头必须包含 text/event-stream"
+
+msgid "ERR_MISSING_SESSION"
+msgstr "缺少 Mcp-Session-Id 请求头"
+
+# --- 日志消息 ---
+msgid "LOG_REQUEST"
+msgstr "%s %s (会话: %s)"
+
+msgid "LOG_NEW_SESSION"
+msgstr "新会话"
+
+msgid "LOG_CLIENT_SHUTDOWN"
+msgstr "客户端 %s 请求关闭"
+
+msgid "LOG_CLIENT_CONNECTED"
+msgstr "客户端已连接: %s"
+
+msgid "LOG_CLIENT_DISCONNECTED"
+msgstr "客户端已断开: %s"
+
+# --- 停靠面板 UI ---
+msgid "DOCK_TITLE"
+msgstr "Godot MCP 服务器"
+
+msgid "PORT_LABEL"
+msgstr "端口:"
+
+msgid "START"
+msgstr "启动"
+
+msgid "STOP"
+msgstr "停止"
+
+msgid "TAB_LOG"
+msgstr "日志"
+
+msgid "TAB_ACTIVITY"
+msgstr "活动"
+
+# --- 活动卡片 ---
+msgid "CLIENT_CONNECTED"
+msgstr "客户端已连接"
+
+msgid "CLIENT_DISCONNECTED"
+msgstr "客户端已断开"
+
+msgid "CLIENT_INITIALIZING"
+msgstr "客户端初始化中"
+
+msgid "CLIENT_READY"
+msgstr "客户端就绪"
+
+msgid "LABEL_CLIENT"
+msgstr "客户端:"
+
+msgid "LABEL_SESSION"
+msgstr "会话:"
+
+msgid "TOOL_CALL"
+msgstr "工具调用:"
+
+msgid "TOOL_ERROR"
+msgstr "工具错误:"
+
+msgid "LABEL_INPUT"
+msgstr "输入:"
+
+msgid "LABEL_RESULT"
+msgstr "结果:"
+
+msgid "LABEL_ERROR"
+msgstr "错误:"
+
+msgid "NEW_SESSION"
+msgstr "新会话"
+
+msgid "EXPAND"
+msgstr "展开"
+
+msgid "COLLAPSE"
+msgstr "折叠"

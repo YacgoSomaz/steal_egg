@@ -1,0 +1,28 @@
+; Engine configuration file.
+
+config_version=5
+
+[application]
+
+config/name="偷蛋长跑"
+config/description="沿一条无限跑道深入，偷走沉睡巨兽的蛋。被追上就赔一颗蛋，速度永久下降。带回家养着产钱，再去偷更贵的。"
+run/main_scene="res://scenes/farm.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[autoload]
+
+GameEvents="*res://scripts/core/game_events.gd"
+GameState="*res://scripts/core/game_state.gd"
+SaveManager="*res://scripts/core/save_manager.gd"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0

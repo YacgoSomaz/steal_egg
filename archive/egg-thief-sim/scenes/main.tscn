@@ -1,0 +1,81 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/core/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/player/player.gd" id="2_player"]
+[ext_resource type="Script" path="res://scripts/player/player_anim.gd" id="3_panim"]
+[ext_resource type="Script" path="res://scripts/enemy/guard.gd" id="4_guard"]
+[ext_resource type="Script" path="res://scripts/nest/nest_builder.gd" id="6_nest"]
+[ext_resource type="Script" path="res://scripts/nest/environment.gd" id="7_env"]
+[ext_resource type="Script" path="res://scripts/core/tuner.gd" id="8_tuner"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_player"]
+radius = 15.0
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_guard"]
+radius = 18.0
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="NestBuilder" type="Node2D" parent="."]
+script = ExtResource("6_nest")
+
+[node name="Environment" type="Node2D" parent="."]
+script = ExtResource("7_env")
+
+[node name="Player" type="CharacterBody2D" parent="."]
+position = Vector2(90, 620)
+script = ExtResource("2_player")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player"]
+shape = SubResource("CircleShape2D_player")
+
+[node name="Body" type="Polygon2D" parent="Player"]
+
+[node name="Head" type="Polygon2D" parent="Player"]
+
+[node name="LegL" type="Polygon2D" parent="Player"]
+
+[node name="LegR" type="Polygon2D" parent="Player"]
+
+[node name="CarrySlot" type="Node2D" parent="Player"]
+
+[node name="PlayerAnim" type="Node2D" parent="Player"]
+script = ExtResource("3_panim")
+
+[node name="Guard" type="CharacterBody2D" parent="."]
+position = Vector2(640, 300)
+script = ExtResource("4_guard")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Guard"]
+shape = SubResource("CircleShape2D_guard")
+
+[node name="Body" type="Polygon2D" parent="Guard"]
+
+[node name="ViewCone" type="Polygon2D" parent="Guard"]
+
+[node name="ViewRay" type="RayCast2D" parent="Guard"]
+enabled = true
+
+[node name="ExitMarker" type="Node2D" parent="."]
+position = Vector2(90, 620)
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="AlertBar" type="ProgressBar" parent="HUD"]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 284.0
+offset_bottom = 46.0
+max_value = 100.0
+value = 0.0
+
+[node name="InfoLabel" type="Label" parent="HUD"]
+offset_left = 24.0
+offset_top = 56.0
+offset_right = 620.0
+offset_bottom = 80.0
+text = "WASD 移动 / Shift 蹲走 / E 抓蛋 / Q 放下一颗"
+
+[node name="Tuner" type="CanvasLayer" parent="."]
+script = ExtResource("8_tuner")
