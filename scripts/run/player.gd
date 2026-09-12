@@ -5,6 +5,8 @@ extends CharacterBody3D
 const CreatureDB := preload("res://scripts/data/creature_db.gd")
 const SPEED_FX := preload("res://scenes/run/speed_fx.tscn")
 const SPEED_FX_REF := 60.0           # 前倾到这个速度压满
+const FARM_HALF_W := 24.0            # 农场区的可行走半宽（要和 farm_zone 的围栏对齐）
+const FARM_END_Z := 71.0             # 农场尽头，别走出围栏
 
 var sneaking := false
 var frozen := false
@@ -78,7 +80,8 @@ func _physics_process(delta: float) -> void:
 		_model.rotation.x = 0.0
 		return
 
-	var input := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+	# 用自定义动作，WASD 和方向键都绑了（内置 ui_* 在 Godot 4 里只有方向键）
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	sneaking = Input.is_key_pressed(KEY_SHIFT)
 	var sp := GameState.get_run_speed()
 	if sneaking:
@@ -89,7 +92,12 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	# 跑道随阶位变宽，所以边界也得跟着算；相机拉远时人同步放大，不然就成蚂蚁了
 	var k := CreatureDB.world_scale(CreatureDB.tier_at(maxf(0.0, -position.z), GameState.start_tier))
-	position.x = clampf(position.x, -12.0 * k, 12.0 * k)
+	var half := 12.0 * k
+	if position.z > 0.0:
+		half = FARM_HALF_W          # 农场区更宽，摊位一路排到 ±19.5
+	position.x = clampf(position.x, -half, half)
+	# 农场尽头有围栏，别走出去
+	position.z = minf(position.z, FARM_END_Z)
 	position.y = 0.0
 	var ms := CreatureDB.model_scale(sp)
 	scale = Vector3(ms, ms, ms)

@@ -10,7 +10,11 @@ const EGG := preload("res://scenes/run/egg.tscn")
 
 const CHUNK_LEN := 100.0          # T1 的基准长度，往后按 world_scale 拉长
 const HALF_W := 13.0              # T1 的基准半宽，同上
-const SAFE_DIST := 40.0           # 起点这么近不放怪，给玩家喘口气
+## 起点这么近不放怪，给玩家喘口气。
+## 原来写 40，加上下面那条 `run_dist > SAFE_DIST * 0.5` 的守卫，
+## 第 0 段（run_dist=0）一只怪都不放，第一只怪落在第 1 段里 ——
+## 也就是 140 米开外，玩家要空跑十几秒才有事可做。现在压到 14。
+const SAFE_DIST := 14.0
 const NESTS_PER_CHUNK := 2
 const DASH_STEP := 5.0            # 地面横向条纹间距——**不**随世界尺度缩放
 
@@ -52,11 +56,15 @@ func _build_next() -> void:
 	_build_ground(root, z_start, z_end, k, td)
 	_build_dashes(root, z_start, z_end, HALF_W * k)
 	_build_rails(root, z_start, z_end, k)
-	# 巢数按 chunk 长度等比放大，否则高阶区一段路又长又空
-	if run_dist > SAFE_DIST * 0.5:
-		var nests := maxi(2, int(round(float(NESTS_PER_CHUNK) * k)))
-		for _n in range(nests):
-			_spawn_nest(root, z_start, z_end, tier, k)
+	# 巢数按 chunk 长度等比放大，否则高阶区一段路又长又空。
+	# 注意：第 0 段也必须放，否则起点附近空一大截。
+	var nests := maxi(2, int(round(float(NESTS_PER_CHUNK) * k)))
+	for _n in range(nests):
+		_spawn_nest(root, z_start, z_end, tier, k)
+	# 第一段额外钉一只在起点眼皮底下：随机分布下最近的那只可能落在
+	# 四五十米开外，玩家开局还是要空跑一段。这一只保证两三秒内就有事做。
+	if idx == 0:
+		_spawn_nest(root, z_start, z_end, tier, k, -(SAFE_DIST + 4.0))
 
 	_chunks.append({"node": root, "z_start": z_start, "z_end": z_end})
 	_head_z = z_end
@@ -140,11 +148,15 @@ func _build_rails(root: Node3D, z0: float, z1: float, k: float) -> void:
 		root.add_child(rail)
 
 
-func _spawn_nest(root: Node3D, z0: float, z1: float, tier: int, k: float) -> void:
+## z_forced < 0 时用它当坐标，否则在段落内随机取
+func _spawn_nest(root: Node3D, z0: float, z1: float, tier: int, k: float,
+		z_forced: float = 0.0) -> void:
 	var span := absf(z1 - z0)
-	var z := z0 - _rng.randf_range(span * 0.12, span * 0.88)
+	var z := z_forced if z_forced < 0.0 else z0 - _rng.randf_range(span * 0.12, span * 0.88)
 	if -z < SAFE_DIST:
-		return                      # 太靠近起点，跳过
+		# 太贴起点了：往外挪几米，而不是整只跳过。
+		# 跳过的话，运气不好时第一段会一只不剩，又回到"起点空一片"的老问题。
+		z = -(SAFE_DIST + _rng.randf_range(0.0, 8.0))
 	var x := _rng.randf_range(-10.0, 10.0) * k
 
 	# 巢里的怪可能比本阶高一点点，也可能低一点点 —— 让每段路都有惊喜

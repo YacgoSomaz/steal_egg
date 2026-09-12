@@ -34,7 +34,25 @@ var _halo: Node3D = null   # T10 光环，自己慢慢转
 var _model: Node3D = null
 var _floaty := false       # 浮游种：没有腿，靠上下起伏表现"活着"
 var _display := false      # 陈列模式：站着慢慢转，纯给人看外形
+var _pen_center := Vector3.ZERO
+var _pen_radius := 0.0
+var _wander_to := Vector3.ZERO
 var _t := 0.0
+
+
+## 畜栏模式：在围栏里慢慢晃。农场里那些养着的生物用这个，
+## 站着不动打转看着像标本，走起来才像"这是我养活的"。
+func set_pen(center: Vector3, radius: float) -> void:
+	_display = true
+	_pen_center = center
+	_pen_radius = radius
+	_wander_to = center
+	_state = State.CHASE
+	scale.y = _base_scale
+	if _zzz:
+		_zzz.visible = false
+	if _tag:
+		_tag.visible = false
 
 
 ## 陈列模式（--gallery 用）：不会追人、不会睡回去，就站在原地慢慢转，
@@ -134,11 +152,22 @@ func _build() -> void:
 func _physics_process(delta: float) -> void:
 	_t += delta
 	if _display:
-		# 站着慢慢自转，让人能看清全身轮廓
-		rotation.y += delta * 0.35
 		scale.y = _base_scale
 		position.y = 0.0
-		_animate(0.0)
+		if _pen_radius > 0.0:
+			# 畜栏里的：玩家跑远了就别算了，农场最多二十只，一直全渲染会拖帧
+			var pl := _get_player()
+			if pl != null and _flat_dist(pl) > 240.0:
+				if visible:
+					visible = false
+				return
+			if not visible:
+				visible = true
+			_wander(delta)
+		else:
+			# 陈列模式：站着慢慢自转，让人能看清全身轮廓
+			rotation.y += delta * 0.35
+			_animate(0.0)
 		return
 	var player := _get_player()
 	# 远处还在睡的：不跑逻辑也不渲染。单局几十只怪，不省这个会白烧 CPU 和 draw call
@@ -228,6 +257,22 @@ func _animate(speed: float) -> void:
 	if _halo != null:
 		_halo.rotation.y += (0.6 + speed * 0.03) * get_physics_process_delta_time()
 		_halo.rotation.x = sin(_t * 0.5) * 0.18
+
+
+## 在围栏里随机踱步：走到一个点就换下一个，走到边界会被拉回来
+func _wander(delta: float) -> void:
+	var to := _wander_to - position
+	to.y = 0.0
+	if to.length() < 0.8 or randf() < delta * 0.15:
+		var a := randf() * TAU
+		var r := sqrt(randf()) * _pen_radius
+		_wander_to = _pen_center + Vector3(cos(a) * r, 0.0, sin(a) * r)
+		return
+	var sp := 1.4 + float(tier) * 0.06
+	velocity = to.normalized() * sp
+	move_and_slide()
+	rotation.y = atan2(-to.x, -to.z)
+	_animate(sp)
 
 
 func _leg_swing(speed: float) -> void:

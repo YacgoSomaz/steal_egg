@@ -31,14 +31,16 @@ func update(speed: float, moving: bool) -> void:
 		return
 	var r := clampf(speed / SPEED_REF, 0.0, 1.3)
 
-	_lines.amount = int(float(LINE_AMOUNT) * clampf(r * 1.4 - 0.15, 0.0, 1.0))
+	# amount 必须 ≥ 1：低速时算出来是 0，Godot 会每帧报
+	# "Amount of particles must be greater than 0"。用 emitting 去关，不用 amount 归零。
+	_lines.amount = maxi(1, int(float(LINE_AMOUNT) * clampf(r * 1.4 - 0.15, 0.0, 1.0)))
 	_lines.emitting = moving and r > 0.12
 	_lines.initial_velocity_min = 16.0 + speed * 1.5
 	_lines.initial_velocity_max = 28.0 + speed * 2.3
 	_lines.scale_amount_min = 0.5 + r
 	_lines.scale_amount_max = 1.2 + r * 2.8
 
-	_dust.amount = int(float(DUST_AMOUNT) * clampf(r * 1.1, 0.15, 1.0))
+	_dust.amount = maxi(1, int(float(DUST_AMOUNT) * clampf(r * 1.1, 0.15, 1.0)))
 	_dust.emitting = moving
 	_dust.initial_velocity_min = 2.0 + speed * 0.10
 	_dust.initial_velocity_max = 5.0 + speed * 0.22

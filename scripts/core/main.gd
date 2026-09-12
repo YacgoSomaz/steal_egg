@@ -6,13 +6,22 @@ extends Node3D
 
 const CreatureDB := preload("res://scripts/data/creature_db.gd")
 const LANDMARK := preload("res://scenes/run/landmark.tscn")
+const FARM_ZONE := preload("res://scripts/run/farm_zone.gd")
 
-## 越肩视角：相机压到玩家右肩后上方，透视投影，看得见地平线上的东西。
-## 越低越有压迫感，也越能看见远处的巨型生物——这是这一版选它的唯一理由。
-const CAM_OFFSET := Vector3(1.6, 4.4, 8.2)
-const CAM_PITCH := -17.0
+## 相机：绕玩家自由转的第三人称。鼠标控制偏航/俯仰，滚轮拉远近。
+## 之所以从"固定越肩"改成自由视角：撤离点后面就是农场和店铺，
+## 玩家得能扭头看看自己养的生物长成什么样了。
 const CAM_FOV := 72.0
 const CAM_LERP := 7.0           # 跟随平滑，别让玩家一转向画面就抽
+const CAM_TARGET_Y := 1.3       # 看向玩家胸口，不是脚底
+const CAM_DIST_DEF := 8.6
+const CAM_DIST_MIN := 3.0
+const CAM_DIST_MAX := 24.0
+const CAM_PITCH_DEF := 0.30     # 弧度，正值=相机在上方俯视
+const CAM_PITCH_MIN := -0.35    # 压到最低，几乎平视（看巨兽用）
+const CAM_PITCH_MAX := 1.15     # 拉到最高，快成俯视图
+const MOUSE_SENS := 0.0026
+const WHEEL_STEP := 0.9
 
 ## 速度感三件套。注意配比：以前 zoom 给到 6 倍、模型放大 0.35，
 ## 结果把速度提升全抵消了——数值涨 10 倍，看着跟没涨一样。
@@ -47,6 +56,12 @@ var _cam_ready := false
 var _gallery := false
 var _gallery_tier := 1
 var _gallery_node: Node = null
+var _cam_yaw := 0.0
+var _cam_pitch := CAM_PITCH_DEF
+var _cam_dist := CAM_DIST_DEF
+var _farm: Node3D = null
+var _near_station: Dictionary = {}
+var _want_interact := false      # 本帧是否按下了 E（边沿触发，防止按住连买）
 
 
 func _ready() -> void:
@@ -62,11 +77,23 @@ func _ready() -> void:
 		if i + 1 < args.size():
 			d = absf(float(args[i + 1]))
 		_player.position.z = -d
+	# 撤离点后面的农场 + 店铺。不再切场景，走回去就行
+	_farm = Node3D.new()
+	_farm.name = "FarmZone"
+	_farm.set_script(FARM_ZONE)
+	add_child(_farm)
+	_farm.call("build")
+
 	_track.call("update", _player.position.z)
 	_bar.visible = false
+	# 鼠标接管视角。Tab 释放（要去点别的窗口时用），再按 Tab 收回
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	if args.has("--diag"):
 		await get_tree().process_frame
 		_diag()
+	if args.has("--shop"):
+		await get_tree().process_frame
+		_shop_selftest()
 	if args.has("--gallery"):
 		_gallery = true
 		# --gallery 7 可以从指定阶位开始，headless 下也能逐阶验证接线
@@ -77,6 +104,61 @@ func _ready() -> void:
 		_spawn_gallery(gt)
 
 
+## 商店自检：给一笔钱，把六个摊位各买一遍。
+## 这类「点一下扣钱加属性」的逻辑最容易写错（成本公式、等级上限、越界），
+## 而且错了要玩家玩很久才发现，值得每次改动都自动跑一遍。
+func _shop_selftest() -> void:
+	# 先快照。自检会真的改 GameState，而 _after_buy 里会触发存档——
+	# 不快照的话，测试用的 99 万金币会直接写进玩家的存档里。
+	var snap := {
+		"coins": GameState.coins, "speed_level": GameState.speed_level,
+		"stealth_level": GameState.stealth_level, "shoe_level": GameState.shoe_level,
+		"gear_cloak": GameState.gear_cloak, "gear_jet": GameState.gear_jet,
+		"catch_count": GameState.catch_count,
+		"farm": GameState.farm.duplicate(true),
+		"stored": GameState.stored.duplicate(true),
+	}
+	GameState.coins = 999999.0
+	GameState.stored = [
+		{"name": "林蜥蛋", "tier": 2, "income": 1.2, "value": 42.0,
+			"quality_name": "优良", "quality_mult": 1.4},
+		{"name": "火蜥蛋", "tier": 4, "income": 9.0, "value": 315.0,
+			"quality_name": "普通", "quality_mult": 1.0},
+	]
+	print("[商店自检] 起始：金币 %.0f ｜ 仓库 %d 颗 ｜ 干净速度 %.2f（%.0f km/h）" % [
+		GameState.coins, GameState.stored.size(),
+		GameState.get_clean_speed(), GameState.get_display_speed()])
+	var list: Array = _farm.get("_stations") as Array
+	for st in list:
+		var msg := str(_farm.call("interact", st))
+		print("  %-8s → %s" % [str(st.get("name", "")), msg])
+	print("[商店自检] 结束：金币 %.0f ｜ 锻炼 Lv%d ｜ 跑鞋 Lv%d ｜ 披风 Lv%d ｜ 喷气 Lv%d" % [
+		GameState.coins, GameState.speed_level, GameState.shoe_level,
+		GameState.gear_cloak, GameState.gear_jet])
+	print("[商店自检] 　　　农场 %d 只（每秒 +%.1f）｜ 仓库剩 %d 颗 ｜ 干净速度 %.2f（%.0f km/h）" % [
+		GameState.farm.size(), GameState.get_income_per_sec(), GameState.stored.size(),
+		GameState.get_clean_speed(), GameState.get_display_speed()])
+	# 摊位识别：站在中央摊位前应该能认出来
+	var st2: Dictionary = _farm.call("nearest", Vector3(0.0, 0.0, 10.0)) as Dictionary
+	print("[商店自检] 站在 (0, 10) 时最近摊位 = %s" % str(st2.get("name", "（没识别到）")))
+	var st3: Dictionary = _farm.call("nearest", Vector3(0.0, 0.0, -60.0)) as Dictionary
+	print("[商店自检] 站在跑道上 (0, -60) 时 = %s" % str(st3.get("name", "（正确地没提示）")))
+
+	# 还原快照并写回存档，别把测试数据留在玩家档里
+	GameState.coins = float(snap["coins"])
+	GameState.speed_level = int(snap["speed_level"])
+	GameState.stealth_level = int(snap["stealth_level"])
+	GameState.shoe_level = int(snap["shoe_level"])
+	GameState.gear_cloak = int(snap["gear_cloak"])
+	GameState.gear_jet = int(snap["gear_jet"])
+	GameState.catch_count = int(snap["catch_count"])
+	GameState.farm = snap["farm"] as Array
+	GameState.stored = snap["stored"] as Array
+	SaveManager.save()
+	print("[商店自检] 已还原存档：金币 %.0f ｜ 锻炼 Lv%d ｜ 农场 %d 只 ｜ 仓库 %d 颗" % [
+		GameState.coins, GameState.speed_level, GameState.farm.size(), GameState.stored.size()])
+
+
 func _diag() -> void:
 	var creatures := get_tree().get_nodes_in_group("creatures")
 	var eggs := get_tree().get_nodes_in_group("eggs")
@@ -85,9 +167,14 @@ func _diag() -> void:
 	for c in creatures:
 		var t := int(c.get("tier"))
 		by_tier[t] = int(by_tier.get(t, 0)) + 1
-	print("[自检] 起点阶 T%d ｜ 距离 %.0f m ｜ 当前阶 T%d ｜ 沉睡怪 %d 只 ｜ 蛋 %d 颗 ｜ 阶位分布 %s" % [
+	# 最近的那只怪离起点多远——这个数字太大就说明起点附近太空
+	var nearest := INF
+	for c in creatures:
+		var n: Node3D = c as Node3D
+		nearest = minf(nearest, maxf(0.0, -n.global_position.z))
+	print("[自检] 起点阶 T%d ｜ 距离 %.0f m ｜ 当前阶 T%d ｜ 沉睡怪 %d 只 ｜ 蛋 %d 颗 ｜ 最近怪 %.0f m ｜ 阶位分布 %s" % [
 		GameState.start_tier, dist, CreatureDB.tier_at(dist, GameState.start_tier),
-		creatures.size(), eggs.size(), str(by_tier),
+		creatures.size(), eggs.size(), nearest, str(by_tier),
 	])
 
 
@@ -111,16 +198,48 @@ func _spawn_gallery(t: int) -> void:
 	_gallery_node = s
 
 
+# ── 相机 ───────────────────────────────────────
+func _cam_target() -> Vector3:
+	return _player.position + Vector3(0.0, CAM_TARGET_Y, 0.0)
+
+
+## 从玩家指向相机的单位向量，乘上距离就是偏移。
+## yaw=0 时相机在 +Z（玩家背后），因为玩家朝 −Z。
+func _cam_offset() -> Vector3:
+	var cp := cos(_cam_pitch)
+	return Vector3(sin(_cam_yaw) * cp, sin(_cam_pitch), cos(_cam_yaw) * cp) * _cam_dist
+
+
+# ── 店铺交互 ───────────────────────────────────
+## 走到摊位边上按 E 就买。撤离点后面就是店铺，不用再切场景。
+func _handle_shop() -> void:
+	if _farm == null:
+		return
+	_near_station = _farm.call("nearest", _player.position) as Dictionary
+	if _near_station.is_empty():
+		_want_interact = false
+		return
+	# 必须用"按下"的边沿，不能用 is_key_pressed 轮询——
+	# 否则站在摊位前按住 E 会每帧买一次，一秒钟把金币清空
+	if _want_interact:
+		_want_interact = false
+		var msg := str(_farm.call("interact", _near_station))
+		if msg != "":
+			_show_toast(msg)
+			GameState.refresh_start_tier()   # 速度变了，下次开门的阶位也要跟着变
+
+
 func _setup_lights() -> void:
 	_sun.rotation_degrees = Vector3(-55.0, 35.0, 0.0)
 	_sun.light_energy = 1.15
 	_fill.rotation_degrees = Vector3(-25.0, -140.0, 0.0)
 	_fill.light_energy = 0.45
-	# 越肩：透视 + 压低俯角，地平线进画面，远处的巨兽才看得见
+	# 透视投影：地平线进画面，远处的巨兽才看得见
 	_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
 	_cam.fov = CAM_FOV
-	_cam.rotation_degrees = Vector3(CAM_PITCH, 0.0, 0.0)
-	_cam.position = _player.position + CAM_OFFSET
+	# 第一帧直接摆到位，别从原点飞过去
+	_cam.position = _cam_target() + _cam_offset()
+	_cam.look_at(_cam_target(), Vector3.UP)
 	_cam_ready = true
 	_build_start_marker()
 	_setup_environment()
@@ -200,8 +319,11 @@ func _process(delta: float) -> void:
 	if _cam_ready:
 		var sp := GameState.get_run_speed()
 		var zoom := CreatureDB.camera_zoom(sp)
-		var want := _player.position + CAM_OFFSET * zoom
+		var target := _cam_target()
+		var want := target + _cam_offset() * zoom
 		_cam.position = _cam.position.lerp(want, clampf(CAM_LERP * delta, 0.0, 1.0))
+		# 朝向每帧重算：位置是 lerp 过去的，朝向不能也跟着慢半拍
+		_cam.look_at(target, Vector3.UP)
 		# FOV 随速度撑开：这是最便宜也最有效的"我在变快"信号
 		_cam.fov = CAM_FOV + clampf(sp * FOV_PER_SPEED, 0.0, FOV_MAX_BOOST)
 		# 高速时轻微抖动，速度感里"体感"的那一半
@@ -211,6 +333,7 @@ func _process(delta: float) -> void:
 			_cam.position.y += randf_range(-shake, shake)
 	_update_landmarks()
 	_handle_grab(delta)
+	_handle_shop()
 	_check_escape()
 	if _toast_time > 0.0:
 		_toast_time -= delta
@@ -275,6 +398,8 @@ func _wake_nearby(pos: Vector3, r: float) -> void:
 
 
 # ── 撤离 ───────────────────────────────────────
+## 跑过撤离线就把蛋卸进仓库——**不切场景**。
+## 后面就是农场和店铺，转身走两步就能花掉，节奏不再被打断。
 func _check_escape() -> void:
 	if GameState.carried.is_empty():
 		return
@@ -282,7 +407,7 @@ func _check_escape() -> void:
 		var n := GameState.store_carried()
 		GameEvents.escaped.emit(n)
 		SaveManager.save()
-		get_tree().change_scene_to_file("res://scenes/farm.tscn")
+		_show_toast("撤离成功：%d 颗蛋进了仓库，转身去摊位花掉" % n)
 
 
 func _on_caught(lost: Dictionary) -> void:
@@ -326,10 +451,15 @@ func _update_hud() -> void:
 		GameState.catch_count, GameState.get_penalty_multiplier(), GameState.coins,
 	]
 
-	if carried_n > 0:
+	if not _near_station.is_empty():
+		_hint.text = "按 E ▸ %s" % str(_near_station.get("name", ""))
+	elif _player.position.z > ESCAPE_Z:
+		_hint.text = "农场区 ｜ 仓库 %d 颗 ｜ 养着 %d 只（每秒 +%.1f 金币）｜ 走到摊位前按 E" % [
+			GameState.stored.size(), GameState.farm.size(), GameState.get_income_per_sec()]
+	elif carried_n > 0:
 		_hint.text = "带着 %d 颗蛋——跑回起点撤离，路上被追上就赔进去" % carried_n
 	else:
-		_hint.text = "WASD 移动 ｜ Shift 蹲走（安静但慢）｜ E 偷蛋 ｜ ESC 放弃这一趟"
+		_hint.text = "WASD/方向键 移动 ｜ 鼠标 转视角 ｜ 滚轮 拉远近 ｜ Shift 蹲走 ｜ E 偷蛋"
 
 	_toast_label.text = _toast if _toast_time > 0.0 else ""
 
@@ -341,10 +471,27 @@ func _flat_dist(other: Node3D) -> float:
 
 
 func _input(event: InputEvent) -> void:
+	# 鼠标：转视角 + 滚轮拉远近。没被捕获时不转，免得玩家去点别的窗口时画面乱飞
+	if event is InputEventMouseMotion:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			var mm := event as InputEventMouseMotion
+			_cam_yaw -= mm.relative.x * MOUSE_SENS
+			_cam_pitch = clampf(_cam_pitch + mm.relative.y * MOUSE_SENS,
+					CAM_PITCH_MIN, CAM_PITCH_MAX)
+		return
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_cam_dist = clampf(_cam_dist - WHEEL_STEP, CAM_DIST_MIN, CAM_DIST_MAX)
+		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_cam_dist = clampf(_cam_dist + WHEEL_STEP, CAM_DIST_MIN, CAM_DIST_MAX)
+		return
+
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
+	var kc := (event as InputEventKey).keycode
+
 	if _gallery:
-		var kc := (event as InputEventKey).keycode
 		if kc >= KEY_0 and kc <= KEY_9:
 			_spawn_gallery(10 if kc == KEY_0 else (kc - KEY_0))
 			return
@@ -354,6 +501,23 @@ func _input(event: InputEvent) -> void:
 		if kc == KEY_BRACKETRIGHT:
 			_spawn_gallery(_gallery_tier + 1)
 			return
-	if (event as InputEventKey).keycode == KEY_ESCAPE:
-		GameState.reset_run()
-		get_tree().change_scene_to_file("res://scenes/farm.tscn")
+
+	match kc:
+		KEY_TAB:
+			_toggle_mouse()
+		KEY_E:
+			_want_interact = true          # 摊位交互，边沿触发
+		KEY_ESCAPE:
+			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+				_toggle_mouse()            # 先放鼠标，方便切窗口
+			else:
+				# 再按一次才进详细管理面板（孵蛋/单颗处理）
+				GameState.reset_run()
+				get_tree().change_scene_to_file("res://scenes/farm.tscn")
+
+
+func _toggle_mouse() -> void:
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	else:
+		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
