@@ -44,6 +44,9 @@ var _toast_time := 0.0
 var _landmarks: Array = []
 var _landmark_tier := 0
 var _cam_ready := false
+var _gallery := false
+var _gallery_tier := 1
+var _gallery_node: Node = null
 
 
 func _ready() -> void:
@@ -64,6 +67,14 @@ func _ready() -> void:
 	if args.has("--diag"):
 		await get_tree().process_frame
 		_diag()
+	if args.has("--gallery"):
+		_gallery = true
+		# --gallery 7 可以从指定阶位开始，headless 下也能逐阶验证接线
+		var gt := 1
+		var gi := args.find("--gallery")
+		if gi + 1 < args.size():
+			gt = int(absf(float(args[gi + 1])))
+		_spawn_gallery(gt)
 
 
 func _diag() -> void:
@@ -78,6 +89,26 @@ func _diag() -> void:
 		GameState.start_tier, dist, CreatureDB.tier_at(dist, GameState.start_tier),
 		creatures.size(), eggs.size(), str(by_tier),
 	])
+
+
+## 陈列模式：一次只放一只在眼前慢慢转，按 1-9/0 或 [ ] 换阶。
+##
+## 为什么做成一次一只而不是一字排开：T10 到 4.6 倍体型、二十个单位高，
+## 十只并排根本塞不进画面，而且透视会让远的那几只失真，反而比不出差别。
+func _spawn_gallery(t: int) -> void:
+	if _gallery_node != null and is_instance_valid(_gallery_node):
+		_gallery_node.queue_free()
+	_gallery_tier = clampi(t, 1, CreatureDB.MAX_TIER)
+	var s: Node = preload("res://scenes/run/creature.tscn").instantiate()
+	s.call("setup", _gallery_tier)
+	# 观察距离按体型走：T1 只有 1.9 单位高，放远了是个点；
+	# T10 有二十个单位高，放近了连头都出画。这样既看得清细节，又保住体型差
+	var sc := float(CreatureDB.tier_data(_gallery_tier).get("scale", 1.0))
+	s.position = Vector3(0.0, 0.0, -(6.0 + sc * 2.5))
+	add_child(s)
+	s.call("set_home", s.position)
+	s.call("set_display", true)
+	_gallery_node = s
 
 
 func _setup_lights() -> void:
@@ -268,6 +299,16 @@ func _show_toast(text: String) -> void:
 
 # ── HUD ────────────────────────────────────────
 func _update_hud() -> void:
+	if _gallery:
+		var gd: Dictionary = CreatureDB.tier_data(_gallery_tier)
+		var gs := float(gd.get("speed", 6.0)) * GameState.DISPLAY_SPEED_SCALE
+		_info.text = "【陈列】T%d %s ｜ 追击 %.0f km/h ｜ 每秒产出 %.1f ｜ 体型 ×%.2f ｜ 苏醒 %.2f s" % [
+			_gallery_tier, str(gd.get("name", "")), gs,
+			float(gd.get("income", 0.0)), float(gd.get("scale", 1.0)),
+			float(gd.get("wake", 1.0))]
+		_hint.text = "按 1-9、0 直接跳阶 ｜ [ ] 前后翻 ｜ 十阶的轮廓应该一眼分得出来"
+		_toast_label.text = _toast if _toast_time > 0.0 else ""
+		return
 	var dist := maxf(0.0, -_player.position.z)
 	if dist > GameState.best_distance:
 		GameState.best_distance = dist
@@ -302,6 +343,17 @@ func _flat_dist(other: Node3D) -> float:
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
+	if _gallery:
+		var kc := (event as InputEventKey).keycode
+		if kc >= KEY_0 and kc <= KEY_9:
+			_spawn_gallery(10 if kc == KEY_0 else (kc - KEY_0))
+			return
+		if kc == KEY_BRACKETLEFT:
+			_spawn_gallery(_gallery_tier - 1)
+			return
+		if kc == KEY_BRACKETRIGHT:
+			_spawn_gallery(_gallery_tier + 1)
+			return
 	if (event as InputEventKey).keycode == KEY_ESCAPE:
 		GameState.reset_run()
 		get_tree().change_scene_to_file("res://scenes/farm.tscn")

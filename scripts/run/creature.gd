@@ -6,6 +6,7 @@ extends CharacterBody3D
 ## 追上你：抢走身上最贵那颗 + 永久降速，然后心满意足地回去睡。
 
 const CreatureDB := preload("res://scripts/data/creature_db.gd")
+const CreatureModel := preload("res://scripts/run/creature_model.gd")
 
 enum State { ASLEEP, WAKING, CHASE, RETURN }
 
@@ -27,7 +28,26 @@ var _base_scale := 1.0
 var _zzz: Label3D
 var _tag: Label3D
 var _legs: Array = []
+var _segs: Array = []      # 分节躯干 / 尾鳍，会波浪式摆动
+var _wings: Array = []     # 翼 / 鳍，会扇动
+var _halo: Node3D = null   # T10 光环，自己慢慢转
+var _model: Node3D = null
+var _floaty := false       # 浮游种：没有腿，靠上下起伏表现"活着"
+var _display := false      # 陈列模式：站着慢慢转，纯给人看外形
 var _t := 0.0
+
+
+## 陈列模式（--gallery 用）：不会追人、不会睡回去，就站在原地慢慢转，
+## 方便一眼看清这阶长什么样。
+func set_display(on: bool) -> void:
+	_display = on
+	if on:
+		_state = State.CHASE      # 借用站立姿态
+		scale.y = _base_scale
+		if _zzz:
+			_zzz.visible = false
+		if _tag:
+			_tag.modulate = Color(1.0, 0.95, 0.6)
 
 
 func setup(t: int) -> void:
@@ -76,56 +96,27 @@ func on_egg_stolen() -> void:
 		reparent(scene)
 
 
-# ── 建模（零美术资源，全几何体）──────────────────
+# ── 建模 ───────────────────────────────────────
+## 十阶各有各的身体蓝图（见 creature_model.gd），这里只负责挂上去
+## 外加 zZz 和头顶标签。
 func _build() -> void:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(_data.get("color", Color.WHITE))
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(_data.get("color", Color.WHITE)).darkened(0.35)
+	var m: Dictionary = CreatureModel.build(tier)
+	_model = m.get("root") as Node3D
+	_legs = m.get("legs") as Array
+	_segs = m.get("segs") as Array
+	_wings = m.get("wings") as Array
+	_halo = m.get("halo") as Node3D
+	_floaty = bool(m.get("float", false))
+	if _model != null:
+		add_child(_model)
 
-	var torso := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(1.8, 1.0, 2.4)
-	torso.mesh = bm
-	torso.position.y = 0.95
-	torso.material_override = mat
-	add_child(torso)
-
-	var head := MeshInstance3D.new()
-	var hm := BoxMesh.new()
-	hm.size = Vector3(1.0, 0.9, 1.1)
-	head.mesh = hm
-	head.position = Vector3(0, 1.4, -1.6)
-	head.material_override = mat
-	add_child(head)
-
-	for sx in [-0.28, 0.28]:
-		var eye := MeshInstance3D.new()
-		var em := SphereMesh.new()
-		em.radius = 0.14
-		em.height = 0.28
-		eye.mesh = em
-		eye.position = Vector3(sx, 1.55, -2.1)
-		var emat := StandardMaterial3D.new()
-		emat.albedo_color = Color(1.0, 0.85, 0.3)
-		eye.material_override = emat
-		add_child(eye)
-
-	for sx in [-0.62, 0.62]:
-		for sz in [-0.85, 0.85]:
-			var leg := MeshInstance3D.new()
-			var lm := BoxMesh.new()
-			lm.size = Vector3(0.36, 0.8, 0.36)
-			leg.mesh = lm
-			leg.position = Vector3(sx, 0.4, sz)
-			leg.material_override = dark
-			add_child(leg)
-			_legs.append(leg)
+	# 标签和 zZz 要挂在模型头顶，不然 T8 飞龙那种会被戳穿
+	var top := CreatureModel.top_of(tier)
 
 	_zzz = Label3D.new()
 	_zzz.text = "zZz"
 	_zzz.font_size = 48
-	_zzz.position = Vector3(0, 2.8, 0)
+	_zzz.position = Vector3(0, top + 0.35, 0)
 	_zzz.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	add_child(_zzz)
 
@@ -133,7 +124,7 @@ func _build() -> void:
 	_tag = Label3D.new()
 	_tag.text = "T%d %s　%.1f" % [tier, str(_data.get("name", "?")), float(_data.get("speed", 6.0))]
 	_tag.font_size = int(34.0 / _base_scale)
-	_tag.position = Vector3(0, 3.6, 0)
+	_tag.position = Vector3(0, top + 1.05, 0)
 	_tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_tag.modulate = Color(0.85, 0.88, 0.95)
 	add_child(_tag)
@@ -142,6 +133,13 @@ func _build() -> void:
 # ── 每帧 ───────────────────────────────────────
 func _physics_process(delta: float) -> void:
 	_t += delta
+	if _display:
+		# 站着慢慢自转，让人能看清全身轮廓
+		rotation.y += delta * 0.35
+		scale.y = _base_scale
+		position.y = 0.0
+		_animate(0.0)
+		return
 	var player := _get_player()
 	# 远处还在睡的：不跑逻辑也不渲染。单局几十只怪，不省这个会白烧 CPU 和 draw call
 	if _state == State.ASLEEP and player != null:
@@ -166,13 +164,18 @@ func _physics_process(delta: float) -> void:
 ## 睡着的怪不会被路过吵醒——它们是「沉睡」的，只有蛋被动了才会醒。
 ## 这一点很重要：否则玩家在读条时被围住，等于必死。
 func _tick_asleep() -> void:
-	scale.y = _base_scale * (0.42 + sin(_t * 1.6) * 0.03)
+	# 浮游种没有"趴下"这回事，它们只是浮得低一点
+	var s := 0.88 if _floaty else CreatureModel.SLEEP_SQUASH
+	scale.y = _base_scale * (s + sin(_t * 1.6) * 0.03)
+	_animate(0.0)
 
 
 func _tick_waking(delta: float) -> void:
 	_wake_timer -= delta
 	var k := clampf(1.0 - _wake_timer / maxf(0.01, _wake_total), 0.0, 1.0)
-	scale.y = _base_scale * (0.42 + 0.58 * k)
+	var s0 := 0.88 if _floaty else CreatureModel.SLEEP_SQUASH
+	scale.y = _base_scale * (s0 + (1.0 - s0) * k)
+	_animate(0.0)
 	# 后一半时间开始抖，等于给玩家一个"它要起来了，快跑"的信号
 	if k > 0.5:
 		position.x = _home.x + sin(_t * 38.0) * 0.09 * k
@@ -208,9 +211,23 @@ func _tick_chase(delta: float, player: Node3D) -> void:
 	move_and_slide()
 	rotation.y = atan2(-to.x, -to.z)
 	# 腿摆动的频率直接跟速度挂钩：高阶怪腿快得几乎看不清，一眼就知道惹不起
-	_leg_swing(sp)
+	_animate(sp)
 	if _flat_dist(player) < 1.9 * _base_scale:
 		_catch_player()
+
+
+## 一个入口把整套动作跑完：摆腿 / 体节波动 / 扇翼 / 浮游起伏 / 转光环。
+## 所有频率都跟速度挂钩——高阶怪不只是数值快，是看着就快。
+func _animate(speed: float) -> void:
+	_leg_swing(speed)
+	_seg_wave(speed)
+	_wing_flap(speed)
+	if _floaty and _model != null:
+		# 浮游种没有腿，靠上下起伏表示"它醒着，而且在动"
+		_model.position.y = sin(_t * (1.2 + speed * 0.06)) * (0.10 + speed * 0.008)
+	if _halo != null:
+		_halo.rotation.y += (0.6 + speed * 0.03) * get_physics_process_delta_time()
+		_halo.rotation.x = sin(_t * 0.5) * 0.18
 
 
 func _leg_swing(speed: float) -> void:
@@ -218,6 +235,34 @@ func _leg_swing(speed: float) -> void:
 	for i in range(_legs.size()):
 		var leg: Node3D = _legs[i]
 		leg.rotation.x = s if (i % 2 == 0) else -s
+
+
+## 分节躯干 / 尾鳍：相位逐节延迟，看起来像一条波从前往后传过去
+func _seg_wave(speed: float) -> void:
+	if _segs.is_empty():
+		return
+	var f := 2.2 + speed * 0.30
+	for i in range(_segs.size()):
+		var s: Node3D = _segs[i]
+		if s == null:
+			continue
+		var ph := float(i) * 0.62
+		s.rotation.y = sin(_t * f - ph) * 0.16
+		s.position.x = sin(_t * f * 0.7 - ph) * 0.09
+
+
+## 翼 / 鳍：追击时扇得急，睡着时只是微微起伏
+func _wing_flap(speed: float) -> void:
+	if _wings.is_empty():
+		return
+	var amp := 0.10 + clampf(speed * 0.012, 0.0, 0.42)
+	var f := 1.8 + speed * 0.22
+	for i in range(_wings.size()):
+		var w: Node3D = _wings[i]
+		if w == null:
+			continue
+		var side := 1.0 if w.position.x >= 0.0 else -1.0
+		w.rotation.z = sin(_t * f) * amp * side
 
 
 func _tick_return(delta: float) -> void:
