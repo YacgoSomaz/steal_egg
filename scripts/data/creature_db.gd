@@ -38,13 +38,40 @@ const SAFE_LINE := -12.0
 ## 起点本身由玩家速度决定，所以低阶内容会被跳过——没人想再刷一遍草鸡。
 const RUN_TIER_GAPS: Array = [250.0, 600.0, 1200.0, 2200.0, 3800.0, 6300.0, 10000.0, 16000.0]
 
-## 品质：影响养出来之后的产钱效率，也影响卖价
+## 品质：影响养出来之后的产钱效率，也影响卖价。
+## 只放「名字 + 倍率」，**概率不放这里**——概率是随距离变的，见下面两张表。
+## （以前这里存了个 cum 累积值，加了距离曲线之后它就成了第二个真相来源，
+##   两处都能算概率，早晚会对不上。所以直接删掉。）
 const QUALITIES: Array = [
-	{"name": "普通", "mult": 1.0, "cum": 0.70},
-	{"name": "优良", "mult": 1.4, "cum": 0.90},
-	{"name": "闪光", "mult": 1.9, "cum": 0.98},
-	{"name": "变异", "mult": 2.6, "cum": 1.00},
+	{"name": "普通", "mult": 1.0},
+	{"name": "优良", "mult": 1.4},
+	{"name": "闪光", "mult": 1.9},
+	{"name": "变异", "mult": 2.6},
 ]
+
+## ⭐ 品质概率随跑道长度变化。用户的要求：
+## "还是按跑道长度来逐渐出现越来越稀有的蛋吧"
+##
+## 两张表是「起点」和「跑满全程」两端的概率分布，中间线性插值。
+## 用概率而不是累积值，是为了改的时候一眼能看懂、加起来必须等于 1。
+##
+##   起点附近：普通 70% / 优良 20% / 闪光  8% / 变异  2%
+##   跑满全程：普通 25% / 优良 30% / 闪光 30% / 变异 15%
+const QUALITY_BASE: Array = [0.70, 0.20, 0.08, 0.02]
+const QUALITY_DEEP: Array = [0.25, 0.30, 0.30, 0.15]
+
+## 距离 → 稀有度加成系数 t：0 = 起点，1 = 跑满 MAX_RUN_DIST。
+## 单列出来是因为 HUD 和自检都要用它，不能各算各的。
+static func quality_t(run_distance: float) -> float:
+	return clampf(run_distance / MAX_RUN_DIST, 0.0, 1.0)
+
+
+## 某一阶品质在指定距离下的出现概率（0..1）。HUD 用它显示"当前能刷到什么"。
+static func quality_chance(index: int, run_distance: float) -> float:
+	if index < 0 or index >= QUALITY_BASE.size():
+		return 0.0
+	return lerpf(float(QUALITY_BASE[index]), float(QUALITY_DEEP[index]),
+			quality_t(run_distance))
 
 const MAX_TIER: int = 10
 
@@ -105,12 +132,27 @@ static func tier_data(tier: int) -> Dictionary:
 	return TIERS[clampi(tier, 1, MAX_TIER) - 1]
 
 
-static func roll_quality(rng: RandomNumberGenerator) -> Dictionary:
+## 品质名 → 序号（0 普通 … 3 变异）。
+## 给"按品质换外观"用：蛋的模型/发光强度都靠它分档。
+static func quality_index(name: String) -> int:
+	for i in range(QUALITIES.size()):
+		if str(QUALITIES[i]["name"]) == name:
+			return i
+	return 0
+
+
+## 抽品质。**run_distance 决定稀有度曲线**：跑得越深，越容易出闪光/变异。
+## 默认值 0 是为了兼容"没有距离信息"的调用（比如自检），那种情况按起点概率算。
+static func roll_quality(rng: RandomNumberGenerator, run_distance: float = 0.0) -> Dictionary:
+	var t := quality_t(run_distance)
 	var r := rng.randf()
-	for q in QUALITIES:
-		if r <= float(q["cum"]):
-			return q
-	return QUALITIES[0]
+	var acc := 0.0
+	for i in range(QUALITIES.size()):
+		acc += lerpf(float(QUALITY_BASE[i]), float(QUALITY_DEEP[i]), t)
+		if r <= acc:
+			return QUALITIES[i]
+	# 浮点累加可能差一点点到 1.0，兜底给最后（最稀有）那档
+	return QUALITIES[QUALITIES.size() - 1]
 
 
 ## 卖价 = 每秒产出 × 25。养着是细水长流，卖掉是立刻套现

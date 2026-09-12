@@ -175,7 +175,11 @@ func _spawn_nest(root: Node3D, z0: float, z1: float, tier: int, k: float,
 	var ex := clampf(x + _rng.randf_range(-1.8, 1.8) * k, -11.0 * k, 11.0 * k)
 	e.position = Vector3(ex, 0.0, z - 2.4 * k)
 
-	var q: Dictionary = CreatureDB.roll_quality(_rng)
+	# 品质按**这颗蛋离起点多远**抽：跑得越深，越容易出闪光/变异。
+	# 传的是 z 而不是 tier —— tier 是阶位（每 2~3 段才跳一阶），
+	# 而玩家感知的"我跑多深了"是连续的距离。用距离曲线更平滑，
+	# 而且"再往前一点就更容易出好蛋"这件事，玩家能一直感觉到。
+	var q: Dictionary = CreatureDB.roll_quality(_rng, maxf(0.0, -z))
 	var income := float(cd.get("income", 1.0))
 	e.call("setup", {
 		"name": "%s蛋" % str(cd.get("name", "?")),

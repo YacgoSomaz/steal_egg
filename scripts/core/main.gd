@@ -645,10 +645,14 @@ func _update_hud() -> void:
 	var nt_txt := "下一阶还有 %.0f m" % nt if nt > 0.0 else "已是最深阶"
 	var my := GameState.get_display_speed()
 	var foe := float(td.get("speed", 6.0)) * GameState.DISPLAY_SPEED_SCALE
-	_info.text = "距离 %.0f m（%s）｜ T%d %s（%.0f km/h）｜ 你 %.0f km/h【%s】｜ 携带 %d 颗 ｜ 被抓 %d 次 ×%.2f ｜ %.0f 金币" % [
+	# 两行：第一行是位置/速度/资产，第二行是**当前位置的蛋品概率**。
+	# 第二行是关键——品质按跑道长度抽，玩家得能自己算出"再往前一点更划算"，
+	# 否则这条曲线在他眼里根本不存在。
+	_info.text = "距离 %.0f m（%s）｜ T%d %s（%.0f km/h）｜ 你 %.0f km/h【%s】｜ 携带 %d 颗 ｜ 被抓 %d 次 ×%.2f ｜ %.0f 金币\n%s" % [
 		dist, nt_txt, tier, str(td.get("name", "")), foe,
 		my, GameState.speed_title(my), carried_n,
 		GameState.catch_count, GameState.get_penalty_multiplier(), GameState.coins,
+		_quality_line(dist),
 	]
 
 	if not _near_station.is_empty():
@@ -662,6 +666,16 @@ func _update_hud() -> void:
 		_hint.text = "WASD/方向键 移动（跟着视角走）｜ 鼠标 转视角 ｜ 滚轮 拉远近 ｜ Shift 蹲走 ｜ E 偷蛋"
 
 	_toast_label.text = _toast if _toast_time > 0.0 else ""
+
+
+## 当前位置能刷到什么品质的蛋。四个百分比直接写出来，
+## 玩家看一眼就知道"现在跑深一点值不值"。
+func _quality_line(dist: float) -> String:
+	var parts: Array = []
+	for i in range(CreatureDB.QUALITIES.size()):
+		parts.append("%s %.0f%%" % [str(CreatureDB.QUALITIES[i]["name"]),
+			CreatureDB.quality_chance(i, dist) * 100.0])
+	return "此处蛋品：" + " ／ ".join(parts)
 
 
 func _flat_dist(other: Node3D) -> float:
