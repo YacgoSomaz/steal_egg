@@ -34,3 +34,7 @@ desktop.ini
 # Python（调试脚本偶尔用）
 __pycache__/
 *.pyc
+
+# 排查问题时的临时诊断输出（留档但不入库）
+crashcheck*.txt
+launchcheck.txt
