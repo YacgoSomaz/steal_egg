@@ -3,6 +3,7 @@ extends CharacterBody3D
 ## 偷蛋读条期间 frozen，站着挨最脆弱的那几秒
 
 const CreatureDB := preload("res://scripts/data/creature_db.gd")
+const MoveMath := preload("res://scripts/core/move_math.gd")
 const SPEED_FX := preload("res://scenes/run/speed_fx.tscn")
 const SPEED_FX_REF := 60.0           # 前倾到这个速度压满
 const FARM_HALF_W := 24.0            # 农场区的可行走半宽（要和 farm_zone 的围栏对齐）
@@ -10,6 +11,12 @@ const FARM_END_Z := 71.0             # 农场尽头，别走出围栏
 
 var sneaking := false
 var frozen := false
+## 相机偏航角，由 main.gd 每帧喂进来。
+##
+## 为什么必须让移动知道相机朝哪：加了自由视角之后，如果移动还按世界坐标算，
+## 按 W 永远是"往世界 −Z 走"，转一下鼠标就变成横着走——玩家会觉得"人物不听我的"。
+## 正确的手感是**相对相机**：W = 往画面里走，A/D = 画面左右。
+var cam_yaw := 0.0
 var _t := 0.0
 var _legs: Array = []
 var _model: Node3D          # 单独一层，用来做前倾——不能直接转 body，朝向会被盖掉
@@ -86,9 +93,10 @@ func _physics_process(delta: float) -> void:
 	var sp := GameState.get_run_speed()
 	if sneaking:
 		sp *= 0.55
-	velocity = Vector3(input.x, 0.0, input.y) * sp
-	if velocity.length() > 0.01:
-		rotation.y = atan2(-velocity.x, -velocity.z)
+	var dir := MoveMath.dir_from_input(input, cam_yaw)
+	velocity = dir * sp
+	if dir.length() > 0.01:
+		rotation.y = MoveMath.yaw_from_dir(dir)
 	move_and_slide()
 	# 跑道随阶位变宽，所以边界也得跟着算；相机拉远时人同步放大，不然就成蚂蚁了
 	var k := CreatureDB.world_scale(CreatureDB.tier_at(maxf(0.0, -position.z), GameState.start_tier))

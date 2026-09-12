@@ -224,7 +224,12 @@ func _tick_chase(delta: float, player: Node3D) -> void:
 	if player == null:
 		_state = State.RETURN
 		return
-	# 放弃距离按自己的速度缩放，否则高阶怪一步就跨出旧阈值，等于没有
+	# 撤离线就是追兵的终点。农场区是安全区——追到这里必须回头。
+	# 少了这一条，玩家扛着蛋跑回家，还会在店铺门口被撞：
+	# 那不但"回家不安全"，还会把已经入库的蛋再抢走一次，玩家只会觉得是 bug。
+	if player.global_position.z > CreatureDB.SAFE_LINE:
+		_give_up()
+		return
 	var give_up: float = maxf(GIVE_UP_DIST, float(_data.get("speed", 6.0)) * 8.0)
 	if _lost_egg:
 		if _flat_dist(player) > LOST_EGG_GIVE_UP:
@@ -235,14 +240,28 @@ func _tick_chase(delta: float, player: Node3D) -> void:
 		return
 	var to := player.global_position - global_position
 	to.y = 0.0
-	var sp := float(_data.get("speed", 6.5))
+	var sp := float(_data.get("speed", 6.0))
 	velocity = to.normalized() * sp
 	move_and_slide()
+	# 物理上也不许越线：万一某阶怪速度太大一步跨过，也要被拽回来。
+	# 只在越过时改 z，正常追击（z < SAFE_LINE）完全不受影响。
+	if global_position.z > CreatureDB.SAFE_LINE:
+		global_position.z = CreatureDB.SAFE_LINE
 	rotation.y = atan2(-to.x, -to.z)
 	# 腿摆动的频率直接跟速度挂钩：高阶怪腿快得几乎看不清，一眼就知道惹不起
 	_animate(sp)
-	if _flat_dist(player) < 1.9 * _base_scale:
+	# 抓取半径也要卡在安全区外，否则 T10 那种 8.7 米的判定
+	# 能隔着撤离线把站在店门口的玩家抓住
+	if _flat_dist(player) < 1.9 * _base_scale and player.global_position.z <= CreatureDB.SAFE_LINE:
 		_catch_player()
+
+
+## 追到撤离线了，放弃回巢。注意要把 _lost_egg 也清掉——
+## 否则它会一直带着"蛋没抢回来"的状态，下次玩家再靠近就又是无限制追击
+func _give_up() -> void:
+	_lost_egg = false
+	_chase_time = 0.0
+	_state = State.RETURN
 
 
 ## 一个入口把整套动作跑完：摆腿 / 体节波动 / 扇翼 / 浮游起伏 / 转光环。

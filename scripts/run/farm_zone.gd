@@ -187,12 +187,19 @@ func _station_text(kind: String) -> String:
 				1.0 + GameState.JET_PER_LEVEL * float(GameState.gear_jet),
 				int(GameState.get_gear_cost("jet"))]
 		"raise":
-			return "入农场\n仓库 %d 颗 → 开始产钱\n（每秒 +%.1f）" % [
-				GameState.stored.size(), GameState.get_income_per_sec()]
+			return "入农场\n%s\n每秒 +%.1f" % [_stock_line(), GameState.get_income_per_sec()]
 		"sell":
-			return "卖蛋\n仓库 %d 颗 → 立刻变现\n%d 金币" % [
-				GameState.stored.size(), int(_stored_value())]
+			return "卖蛋\n%s\n可卖 %d 金币" % [_stock_line(), int(_stored_value())]
 	return "?"
+
+
+## 牌子上的库存行。
+##
+## 每个和蛋有关的摊位都要显示**两个**数字：仓库（可以卖）和农场（在产钱）。
+## 只显示一个的话，玩家把蛋放进农场之后再来卖蛋，看到"仓库 0 颗"就会
+## 以为是游戏把他的蛋弄丢了——其实蛋在农场里好好产着钱。
+func _stock_line() -> String:
+	return "仓库 %d 颗 ｜ 农场 %d 只" % [GameState.stored.size(), GameState.farm.size()]
 
 
 func _stored_value() -> float:
@@ -244,24 +251,38 @@ func interact(st: Dictionary) -> String:
 			msg = "喷气 Lv%d，开局 ×%.2f" % [
 				GameState.gear_jet, 1.0 + GameState.JET_PER_LEVEL * float(GameState.gear_jet)]
 		"raise":
+			if GameState.stored.is_empty():
+				return _empty_stock_msg()
 			var n := 0
 			while not GameState.stored.is_empty():
 				if GameState.raise_stored(0):
 					n += 1
 				else:
 					break
-			if n == 0:
-				return "仓库是空的——先去偷几颗蛋回来"
-			msg = "%d 只进了农场，现在每秒 +%.1f 金币" % [n, GameState.get_income_per_sec()]
+			msg = "%d 颗进了农场（仓库已清空），现在每秒 +%.1f 金币" % [
+				n, GameState.get_income_per_sec()]
 			rebuild_farm()
 		"sell":
+			if GameState.stored.is_empty():
+				return _empty_stock_msg()
 			var got := _stored_value()
 			var n2 := GameState.sell_all_stored()
 			if n2 == 0:
-				return "仓库是空的——先去偷几颗蛋回来"
+				return _empty_stock_msg()
 			msg = "卖掉 %d 颗，到手 %d 金币" % [n2, int(got)]
 	_after_buy(msg)
 	return msg
+
+
+## 仓库空了时的提示。**必须区分两种情况**：
+## 蛋是真的没有，还是已经被放进农场产钱了。
+## 一句"仓库是空的"会让放完农场的玩家以为蛋丢了——
+## 这是实际收到过的反馈，所以要把两个数字都说出来。
+func _empty_stock_msg() -> String:
+	if not GameState.farm.is_empty():
+		return "仓库空了——你的 %d 只都在农场产钱（每秒 +%.1f）。农场的取不回来，想要现金得去偷新的蛋" % [
+			GameState.farm.size(), GameState.get_income_per_sec()]
+	return "仓库和农场都是空的——先去跑道上偷几颗蛋回来"
 
 
 ## 失败提示要报**这个摊位**的价格，不能写死锻炼的价——

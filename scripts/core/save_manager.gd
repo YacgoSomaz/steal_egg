@@ -3,12 +3,22 @@ extends Node
 
 const SAVE_PATH := "user://egg_runner_save.json"
 
+## 自检模式。打开之后 save() 变成空操作，**一个字节都不会写进玩家存档**。
+##
+## 为什么需要这个开关：自检要走真实代码路径（购买、撤离、被抓都会触发 save），
+## 靠"跑完再还原"是不可靠的——中途出错、进程被杀、玩家同时在玩，
+## 都会把测试数据留在档里。之前就真的把玩家的档写成过 coins: 999479。
+## **只要测试碰得到会存档的代码，就必须先打开这个开关。**
+var test_mode := false
+
 
 func _ready() -> void:
 	load_game()
 
 
 func save() -> void:
+	if test_mode:
+		return
 	var data := {
 		"speed_level": GameState.speed_level,
 		"stealth_level": GameState.stealth_level,

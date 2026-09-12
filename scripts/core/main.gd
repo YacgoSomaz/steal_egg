@@ -32,7 +32,9 @@ const FOV_PER_SPEED := 0.30     # FOV 随速度扩张，制造推背感
 const FOV_MAX_BOOST := 18.0
 
 const GRAB_RANGE := 3.6
-const ESCAPE_Z := -12.0
+## 撤离线。和追兵放弃、追兵位置夹取共用同一个常量——
+## 以前这三处各写各的，才会出现"蛋进仓库了，怪还追进农场撞人"。
+const ESCAPE_Z := CreatureDB.SAFE_LINE
 const NOISE_RADIUS := 12.0      # 偷蛋的动静会吵醒周围这么远的怪（蹲走减半）
 const LANDMARK_AHEAD := 250.0   # 巨型生物摆在玩家前方这么远
 
@@ -62,6 +64,7 @@ var _cam_dist := CAM_DIST_DEF
 var _farm: Node3D = null
 var _near_station: Dictionary = {}
 var _want_interact := false      # 本帧是否按下了 E（边沿触发，防止按住连买）
+var _at_home := false            # 上一帧是否已在安全区，用来只在"刚跨过来"时提示
 
 
 func _ready() -> void:
@@ -86,6 +89,9 @@ func _ready() -> void:
 
 	_track.call("update", _player.position.z)
 	_bar.visible = false
+	# 玩家就出生在撤离点上（z=0 > 安全线），所以一开始就算"在家"。
+	# 不初始化的话，第一帧会白弹一次"已进入撤离区"的提示。
+	_at_home = _player.position.z > ESCAPE_Z
 	# 鼠标接管视角。Tab 释放（要去点别的窗口时用），再按 Tab 收回
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	if args.has("--diag"):
@@ -94,6 +100,12 @@ func _ready() -> void:
 	if args.has("--shop"):
 		await get_tree().process_frame
 		_shop_selftest()
+	if args.has("--esc"):
+		await get_tree().process_frame
+		_esc_selftest()
+	if args.has("--chase"):
+		await get_tree().process_frame
+		_chase_selftest()
 	if args.has("--gallery"):
 		_gallery = true
 		# --gallery 7 可以从指定阶位开始，headless 下也能逐阶验证接线
@@ -108,8 +120,9 @@ func _ready() -> void:
 ## 这类「点一下扣钱加属性」的逻辑最容易写错（成本公式、等级上限、越界），
 ## 而且错了要玩家玩很久才发现，值得每次改动都自动跑一遍。
 func _shop_selftest() -> void:
-	# 先快照。自检会真的改 GameState，而 _after_buy 里会触发存档——
-	# 不快照的话，测试用的 99 万金币会直接写进玩家的存档里。
+	# 先快照 + 关掉写档。自检会真的改 GameState，而 _after_buy 里会触发存档——
+	# 不关的话，测试用的 99 万金币会直接写进玩家的存档里（真的发生过）。
+	SaveManager.test_mode = true
 	var snap := {
 		"coins": GameState.coins, "speed_level": GameState.speed_level,
 		"stealth_level": GameState.stealth_level, "shoe_level": GameState.shoe_level,
@@ -144,7 +157,9 @@ func _shop_selftest() -> void:
 	var st3: Dictionary = _farm.call("nearest", Vector3(0.0, 0.0, -60.0)) as Dictionary
 	print("[商店自检] 站在跑道上 (0, -60) 时 = %s" % str(st3.get("name", "（正确地没提示）")))
 
-	# 还原快照并写回存档，别把测试数据留在玩家档里
+	# 还原内存状态，然后恢复写档。
+	# 注意顺序：先把 test_mode 关掉，再决定要不要真写一次——
+	# 这里不写，因为自检根本没改过存档里的东西（写档全程被挡掉了）。
 	GameState.coins = float(snap["coins"])
 	GameState.speed_level = int(snap["speed_level"])
 	GameState.stealth_level = int(snap["stealth_level"])
@@ -154,9 +169,146 @@ func _shop_selftest() -> void:
 	GameState.catch_count = int(snap["catch_count"])
 	GameState.farm = snap["farm"] as Array
 	GameState.stored = snap["stored"] as Array
-	SaveManager.save()
-	print("[商店自检] 已还原存档：金币 %.0f ｜ 锻炼 Lv%d ｜ 农场 %d 只 ｜ 仓库 %d 颗" % [
+	SaveManager.test_mode = false
+	print("[商店自检] 已还原内存状态（存档全程未写入）：金币 %.0f ｜ 锻炼 Lv%d ｜ 农场 %d 只 ｜ 仓库 %d 颗" % [
 		GameState.coins, GameState.speed_level, GameState.farm.size(), GameState.stored.size()])
+
+
+## 撤离自检：把蛋塞进背包 → 跨过撤离线 → 走到摊位卖。
+##
+## 这条链路横跨 main.gd / game_state.gd / farm_zone.gd 三个文件，
+## 断在哪一环，玩家看到的都是同一句「我明明带回来了，它说我没蛋」。
+## 所以要把每一环的中间状态都打出来，而不是只看最后一句提示。
+func _esc_selftest() -> void:
+	SaveManager.test_mode = true
+	var snap := {
+		"coins": GameState.coins, "carried": GameState.carried.duplicate(true),
+		"stored": GameState.stored.duplicate(true),
+		"farm": GameState.farm.duplicate(true),
+	}
+	var egg := {"name": "林蜥蛋", "tier": 2, "income": 1.2, "value": 42.0,
+		"quality_name": "优良", "quality_mult": 1.4}
+	GameState.carried = [egg.duplicate(true), egg.duplicate(true)]
+	GameState.stored = []
+	print("[撤离自检] 出发：背包 %d 颗 ｜ 仓库 %d 颗 ｜ 撤离线 z=%.0f"
+		% [GameState.carried.size(), GameState.stored.size(), ESCAPE_Z])
+
+	# ① 还在跑道上，不该入库
+	_player.position.z = -40.0
+	_check_escape()
+	print("[撤离自检] ① 站在 -40 m（未过线）→ 背包 %d ｜ 仓库 %d"
+		% [GameState.carried.size(), GameState.stored.size()])
+
+	# ② 跨过撤离线，应该自动入库
+	_player.position.z = 2.0
+	_check_escape()
+	print("[撤离自检] ② 走到 +2 m（已过线）→ 背包 %d ｜ 仓库 %d ｜ 提示「%s」"
+		% [GameState.carried.size(), GameState.stored.size(), _toast])
+
+	# ③ 站到卖蛋摊位前按 E
+	var st: Dictionary = _farm.call("nearest", Vector3(19.5, 0.0, 10.0)) as Dictionary
+	print("[撤离自检] ③ 站在卖蛋摊位前 → 识别到「%s」"
+		% str(st.get("name", "（没识别到）")))
+	print("[撤离自检] ③ 按 E → 「%s」" % str(_farm.call("interact", st)))
+	print("[撤离自检] ③ 卖完 → 金币 %.0f ｜ 仓库 %d 颗"
+		% [GameState.coins, GameState.stored.size()])
+
+	# ④ 再偷一颗，重复一次：确认不是"只能成功一次"
+	GameState.carried = [egg.duplicate(true)]
+	_player.position.z = -40.0
+	_check_escape()
+	_player.position.z = 2.0
+	_check_escape()
+	var st2: Dictionary = _farm.call("nearest", Vector3(19.5, 0.0, 10.0)) as Dictionary
+	print("[撤离自检] ④ 第二趟：仓库 %d 颗 ｜ 按 E → 「%s」"
+		% [GameState.stored.size(), str(_farm.call("interact", st2))])
+
+	# ⑤ 把蛋放进农场，再去卖蛋——必须说清"蛋在农场产钱"而不是"你没有蛋"。
+	#    这正是实际收到的反馈：玩家放完农场再来卖，看到"仓库是空的"以为蛋丢了。
+	GameState.carried = [egg.duplicate(true)]
+	_player.position.z = -40.0
+	_check_escape()
+	_player.position.z = 2.0
+	_check_escape()
+	var st_raise: Dictionary = _farm.call("nearest", Vector3(12.0, 0.0, 10.0)) as Dictionary
+	var st_sell: Dictionary = _farm.call("nearest", Vector3(19.5, 0.0, 10.0)) as Dictionary
+	print("[撤离自检] ⑤ 先入农场 → 「%s」" % str(_farm.call("interact", st_raise)))
+	print("[撤离自检] ⑤ 再去卖蛋 → 「%s」" % str(_farm.call("interact", st_sell)))
+	print("[撤离自检] ⑤ 状态：仓库 %d 颗 ｜ 农场 %d 只"
+		% [GameState.stored.size(), GameState.farm.size()])
+
+	GameState.coins = float(snap["coins"])
+	GameState.carried = snap["carried"] as Array
+	GameState.stored = snap["stored"] as Array
+	GameState.farm = snap["farm"] as Array
+	SaveManager.test_mode = false
+	print("[撤离自检] 已还原内存状态（存档全程未写入）：金币 %.0f ｜ 仓库 %d 颗" % [
+		GameState.coins, GameState.stored.size()])
+
+
+## 追兵边界自检：把一只「蛋被偷了」的怪放在跑道深处，把玩家丢进农场，
+## 看它会不会一路追进店铺门口。
+##
+## 这是用户实际报过的问题——"怪物都追到撤离点里面来撞我了"。
+## 而它同时会引发第二个症状：玩家在自家门口被抢走刚入库的蛋，
+## 然后去卖蛋发现是空的。所以这条必须自动化守住。
+func _chase_selftest() -> void:
+	SaveManager.test_mode = true
+	var snap := {"catch_count": GameState.catch_count, "coins": GameState.coins}
+	var c: Node3D = preload("res://scenes/run/creature.tscn").instantiate()
+	add_child(c)
+	c.position = Vector3(0.0, 0.0, -40.0)
+	c.call("setup", 5)
+	c.call("set_home", Vector3(0.0, 0.0, -40.0))
+	c.call("wake", 0.01)
+	c.call("on_egg_stolen")          # 变成"不追回来不罢休"的那种
+
+	# 第一段：玩家还在跑道上，怪应该**确实在追**（不然这个自检就是空跑）
+	_player.position = Vector3(0.0, 0.0, -20.0)
+	var z0 := c.global_position.z
+	for i in range(40):
+		await get_tree().physics_frame
+	var z1 := c.global_position.z
+	var chased := z1 > z0 + 1.0
+	print("[追兵自检] ① 玩家在跑道 z=-20：怪 z %.1f → %.1f ｜ %s"
+		% [z0, z1, "✓ 在追" if chased else "✗ 没动（自检无效）"])
+
+	# 第二段：玩家跑回农场，怪必须放弃，且**全程不许越线**。
+	# 记录这一段里它到过的最大 z —— 只看最终位置是不够的：
+	# 它可能先冲进农场再"回家"，最终位置看起来正常，其实已经撞过人了。
+	_player.position = Vector3(0.0, 0.0, 6.0)
+	var caught_before := GameState.catch_count
+	var max_z := c.global_position.z
+	for i in range(180):
+		await get_tree().physics_frame
+		max_z = maxf(max_z, c.global_position.z)
+	print("[追兵自检] ② 玩家进农场 z=+6：怪本段最大 z=%.2f（安全线 %.0f）｜ 终态 z=%.2f 状态 %s"
+		% [max_z, CreatureDB.SAFE_LINE, c.global_position.z, str(c.get("_state"))])
+	var ok := max_z <= CreatureDB.SAFE_LINE + 0.01
+	var ok2 := GameState.catch_count == caught_before
+	print("[追兵自检] %s 追兵全程没有越过安全线" % ("✓" if ok else "✗"))
+	print("[追兵自检] %s 玩家在农场里没有被抓（被抓 %d → %d）"
+		% ["✓" if ok2 else "✗", caught_before, GameState.catch_count])
+
+	# 第三段：直接把怪硬塞到农场里（模拟"某阶怪速度太大一步跨过"），
+	# 验证位置夹取会把它拽回安全线。这是兜底，正常追击走不到这里。
+	c.global_position = Vector3(0.0, 0.0, 10.0)
+	c.call("wake", 0.01)
+	_player.position = Vector3(0.0, 0.0, -30.0)     # 玩家在跑道深处，怪才会继续追
+	for i in range(4):
+		await get_tree().physics_frame
+	var cz3 := c.global_position.z
+	var ok3 := cz3 <= CreatureDB.SAFE_LINE + 0.01
+	print("[追兵自检] ③ 硬塞到 z=+10 → 4 帧后 z=%.2f ｜ %s"
+		% [cz3, "✓ 被拽回安全线内" if ok3 else "✗ 仍在线外"])
+
+	c.queue_free()
+	GameState.catch_count = int(snap["catch_count"])
+	GameState.coins = float(snap["coins"])
+	_player.position = Vector3(0.0, 0.0, 0.0)
+	SaveManager.test_mode = false
+	print("[追兵自检] %s（存档全程未写入）"
+		% ("全部通过" if (chased and ok and ok2 and ok3) else "**失败**"))
 
 
 func _diag() -> void:
@@ -164,17 +316,28 @@ func _diag() -> void:
 	var eggs := get_tree().get_nodes_in_group("eggs")
 	var dist := maxf(0.0, -_player.position.z)
 	var by_tier: Dictionary = {}
+	# 兽栏里养着的怪不算跑道怪：它们不睡、不追、也不在跑道上。
+	# 不排除的话，玩家一旦养了怪，"最近怪"就会永远是 0 m（兽栏在 z≈46），
+	# 首怪距离这个指标直接失效——这是个会骗人的假信号。
+	var track_creatures: Array = []
 	for c in creatures:
+		if bool(c.get("_display")):
+			continue
+		track_creatures.append(c)
+	for c in track_creatures:
 		var t := int(c.get("tier"))
 		by_tier[t] = int(by_tier.get(t, 0)) + 1
 	# 最近的那只怪离起点多远——这个数字太大就说明起点附近太空
 	var nearest := INF
-	for c in creatures:
+	for c in track_creatures:
 		var n: Node3D = c as Node3D
 		nearest = minf(nearest, maxf(0.0, -n.global_position.z))
-	print("[自检] 起点阶 T%d ｜ 距离 %.0f m ｜ 当前阶 T%d ｜ 沉睡怪 %d 只 ｜ 蛋 %d 颗 ｜ 最近怪 %.0f m ｜ 阶位分布 %s" % [
+	if is_inf(nearest):
+		nearest = 0.0
+	print("[自检] 起点阶 T%d ｜ 距离 %.0f m ｜ 当前阶 T%d ｜ 沉睡怪 %d 只（兽栏 %d 只不计）｜ 蛋 %d 颗 ｜ 最近怪 %.0f m ｜ 阶位分布 %s" % [
 		GameState.start_tier, dist, CreatureDB.tier_at(dist, GameState.start_tier),
-		creatures.size(), eggs.size(), nearest, str(by_tier),
+		track_creatures.size(), creatures.size() - track_creatures.size(),
+		eggs.size(), nearest, str(by_tier),
 	])
 
 
@@ -290,7 +453,9 @@ func _update_landmarks() -> void:
 	b.position = Vector3(70.0 * k, 0.0, z - 95.0 * k)
 
 
-## 撤离区得看得见，否则玩家不知道该往哪儿跑
+## 撤离区得看得见，否则玩家不知道该往哪儿跑。
+## 还要有一条**明确的安全线**：玩家必须能看出"过这条线追兵就回头"，
+## 否则他会以为农场里也不安全，不敢停下来买东西。
 func _build_start_marker() -> void:
 	var mi := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
@@ -304,6 +469,20 @@ func _build_start_marker() -> void:
 	mi.material_override = mat
 	add_child(mi)
 
+	# 安全线本体：一条横贯跑道的亮线，位置就是 CreatureDB.SAFE_LINE
+	var line := MeshInstance3D.new()
+	var lm := BoxMesh.new()
+	lm.size = Vector3(30.0, 0.12, 0.7)
+	line.mesh = lm
+	line.position = Vector3(0.0, 0.08, ESCAPE_Z)
+	var lmat := StandardMaterial3D.new()
+	lmat.albedo_color = Color(0.45, 0.95, 0.55)
+	lmat.emission_enabled = true
+	lmat.emission = Color(0.35, 0.85, 0.45)
+	lmat.emission_energy_multiplier = 1.6
+	line.material_override = lmat
+	add_child(line)
+
 	var tag := Label3D.new()
 	tag.text = "起点 / 撤离"
 	tag.font_size = 40
@@ -311,11 +490,22 @@ func _build_start_marker() -> void:
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	add_child(tag)
 
+	var safe := Label3D.new()
+	safe.text = "安全线 · 过此线追兵回头"
+	safe.font_size = 30
+	safe.position = Vector3(0.0, 1.9, ESCAPE_Z)
+	safe.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	safe.modulate = Color(0.60, 1.0, 0.70)
+	add_child(safe)
+
 
 func _process(delta: float) -> void:
 	GameState.run_time += delta      # 喷气起步要看开局秒数
 	GameState.tick_income(delta)
 	_track.call("update", _player.position.z)
+	# 把相机朝向喂给玩家：移动是"相对相机"的，不喂的话 W 永远往世界 −Z 走，
+	# 转了视角就变成横着走。喂的是目标偏航角（不是 lerp 后的相机），操作更跟手。
+	_player.set("cam_yaw", _cam_yaw)
 	if _cam_ready:
 		var sp := GameState.get_run_speed()
 		var zoom := CreatureDB.camera_zoom(sp)
@@ -400,10 +590,20 @@ func _wake_nearby(pos: Vector3, r: float) -> void:
 # ── 撤离 ───────────────────────────────────────
 ## 跑过撤离线就把蛋卸进仓库——**不切场景**。
 ## 后面就是农场和店铺，转身走两步就能花掉，节奏不再被打断。
+##
+## 注意这里和 creature.gd 的追兵放弃是**同一条线**（CreatureDB.SAFE_LINE）：
+## 玩家过线的同一帧，蛋入库 + 追兵回头，两件事必须同时发生。
+## 如果只做入库不做回头，玩家会在自家店铺门口被抢第二次。
 func _check_escape() -> void:
+	var home := _player.position.z > ESCAPE_Z
+	# 刚跨过线：不管身上有没有蛋都要告诉玩家"安全了"，
+	# 否则空手跑回来的人会以为追兵还在，继续往农场里躲
+	if home and not _at_home:
+		_show_toast("已进入撤离区——追兵到此为止，不会再追进来")
+	_at_home = home
 	if GameState.carried.is_empty():
 		return
-	if _player.position.z > ESCAPE_Z:
+	if home:
 		var n := GameState.store_carried()
 		GameEvents.escaped.emit(n)
 		SaveManager.save()
@@ -454,12 +654,12 @@ func _update_hud() -> void:
 	if not _near_station.is_empty():
 		_hint.text = "按 E ▸ %s" % str(_near_station.get("name", ""))
 	elif _player.position.z > ESCAPE_Z:
-		_hint.text = "农场区 ｜ 仓库 %d 颗 ｜ 养着 %d 只（每秒 +%.1f 金币）｜ 走到摊位前按 E" % [
+		_hint.text = "农场区（安全）｜ 仓库 %d 颗 ｜ 养着 %d 只（每秒 +%.1f 金币）｜ 走到摊位前按 E" % [
 			GameState.stored.size(), GameState.farm.size(), GameState.get_income_per_sec()]
 	elif carried_n > 0:
-		_hint.text = "带着 %d 颗蛋——跑回起点撤离，路上被追上就赔进去" % carried_n
+		_hint.text = "带着 %d 颗蛋——跑回绿线就安全，路上被追上就赔进去" % carried_n
 	else:
-		_hint.text = "WASD/方向键 移动 ｜ 鼠标 转视角 ｜ 滚轮 拉远近 ｜ Shift 蹲走 ｜ E 偷蛋"
+		_hint.text = "WASD/方向键 移动（跟着视角走）｜ 鼠标 转视角 ｜ 滚轮 拉远近 ｜ Shift 蹲走 ｜ E 偷蛋"
 
 	_toast_label.text = _toast if _toast_time > 0.0 else ""
 
