@@ -95,8 +95,16 @@ static func model_scale(speed: float) -> float:
 	return 1.0 + (camera_zoom(speed) - 1.0) * 0.15
 
 
+## 起始阶位的最低值。T1「草鸡」是被淘汰的内容，不该再出现在跑道上——
+## 用户明确说过"别出草鸡"。所有"门开在哪一阶"的入口都从这里兜底。
+const MIN_START_TIER := 2
+
+
 ## 起始阶位：由玩家速度决定，等于「你跑得过的那一阶」。
 ## 速度上去了，下次出击直接从那一阶开门，草鸡那一段自动略过。
+##
+## ⚠️ 传进来的必须是**干净速度**（锻炼 + 跑鞋），
+## 不能带被抓惩罚，也不能带开局喷气。原因见 game_state.refresh_start_tier()。
 static func start_tier_for(player_speed: float) -> int:
 	var t := 1
 	for i in range(1, MAX_TIER + 1):
@@ -104,7 +112,7 @@ static func start_tier_for(player_speed: float) -> int:
 			t = i
 		else:
 			break
-	return t
+	return maxi(t, MIN_START_TIER)
 
 
 ## 本局距离 → 阶位（相对起点）

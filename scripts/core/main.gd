@@ -106,6 +106,9 @@ func _ready() -> void:
 	if args.has("--chase"):
 		await get_tree().process_frame
 		_chase_selftest()
+	if args.has("--tier"):
+		await get_tree().process_frame
+		_tier_selftest()
 	if args.has("--gallery"):
 		_gallery = true
 		# --gallery 7 可以从指定阶位开始，headless 下也能逐阶验证接线
@@ -309,6 +312,69 @@ func _chase_selftest() -> void:
 	SaveManager.test_mode = false
 	print("[追兵自检] %s（存档全程未写入）"
 		% ("全部通过" if (chased and ok and ok2 and ok3) else "**失败**"))
+
+
+## 起始阶位自检：确认「被抓」不会把玩家推回 T1「草鸡」。
+##
+## 为什么必须自动守：这类缺陷**不会报任何错**。表现只是"被抓几次之后
+## 跑道上的怪又变回最便宜那批"，玩家只会觉得"我变弱了"，查代码看不出来。
+##
+## ⚠️ 守的是**下限**，不是"不变"。
+## 起始阶位随惩罚变浅是**设计**（必须等于你当前跑得过的那一阶，
+## 否则开在自己跑不过的阶位上必被抓 → 死循环，详见 game_state.refresh_start_tier）。
+## 不允许的只有一件事：掉到 T1 —— 那是被淘汰的内容，用户明确说不要。
+func _tier_selftest() -> void:
+	SaveManager.test_mode = true
+	var snap := {
+		"catch_count": GameState.catch_count,
+		"speed_level": GameState.speed_level,
+		"shoe_level": GameState.shoe_level,
+	}
+
+	print("[起始阶自检] ① 当前 速度 Lv%d / 跑鞋 Lv%d ｜ 干净速度 %.2f"
+		% [GameState.speed_level, GameState.shoe_level, GameState.get_clean_speed()])
+
+	GameState.catch_count = 0
+	GameState.refresh_start_tier()
+	var t_free: int = GameState.start_tier
+	print("[起始阶自检] ② 没被抓 → 起点阶 T%d（实际速度 %.2f）"
+		% [t_free, GameState.get_run_speed()])
+
+	# 关键断言：惩罚封底时，起始阶位仍不得低于下限
+	GameState.catch_count = 99
+	GameState.refresh_start_tier()
+	var t_caught: int = GameState.start_tier
+	var ok1 := t_caught >= CreatureDB.MIN_START_TIER
+	print("[起始阶自检] ③ 被抓 99 次（惩罚封底 ×%.3f）→ 起点阶 T%d（实际速度 %.2f）"
+		% [GameState.get_penalty_multiplier(), t_caught, GameState.get_run_speed()])
+	print("[起始阶自检] %s 惩罚再重也不掉回 T1（下限 T%d）"
+		% ["✓" if ok1 else "✗", CreatureDB.MIN_START_TIER])
+
+	# 兜底断言：全零新号 + 抓满，是最容易被推到 T1 的组合
+	GameState.speed_level = 0
+	GameState.shoe_level = 0
+	GameState.refresh_start_tier()
+	var t_new: int = GameState.start_tier
+	var ok2 := t_new >= CreatureDB.MIN_START_TIER
+	print("[起始阶自检] %s 全零新号 + 抓满 → T%d" % ["✓" if ok2 else "✗", t_new])
+
+	# 诊断（**不是断言**）：起始阶的怪是否比玩家慢。
+	# 新号+满惩罚时这条会不成立 —— 那是惩罚按设计生效，不是 bug，
+	# 玩家可以花钱治疗（GameState.heal / HEAL_CATCHES 一次抹 3 次）。
+	var ti := clampi(t_caught, 1, CreatureDB.MAX_TIER) - 1
+	var tier_speed := float(CreatureDB.TIERS[ti]["speed"])
+	print("[起始阶自检] ④ 起始阶怪速 %.1f vs 实际速度 %.2f → %s"
+		% [tier_speed, GameState.get_run_speed(),
+		   "跑得过" if GameState.get_run_speed() >= tier_speed
+		   else "跑不过（惩罚生效中，可花钱治疗）"])
+
+	GameState.catch_count = int(snap["catch_count"])
+	GameState.speed_level = int(snap["speed_level"])
+	GameState.shoe_level = int(snap["shoe_level"])
+	GameState.refresh_start_tier()
+	SaveManager.test_mode = false
+	print("[起始阶自检] %s（存档全程未写入）｜ 已还原：起点阶 T%d"
+		% ["全部通过" if (ok1 and ok2) else "**失败**", GameState.start_tier])
 
 
 func _diag() -> void:
