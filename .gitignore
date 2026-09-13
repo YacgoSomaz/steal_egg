@@ -38,3 +38,4 @@ __pycache__/
 # 排查问题时的临时诊断输出（留档但不入库）
 crashcheck*.txt
 launchcheck.txt
+old_save_search.txt
