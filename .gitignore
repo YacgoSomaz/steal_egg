@@ -35,7 +35,6 @@ desktop.ini
 __pycache__/
 *.pyc
 
-# 排查问题时的临时诊断输出（留档但不入库）
-crashcheck*.txt
-launchcheck.txt
-old_save_search.txt
+# 排查问题时的临时诊断输出。放仓库根、留档但不入库。
+# 本仓库根目录没有需要入库的 .txt，所以直接整类忽略。
+/*.txt
